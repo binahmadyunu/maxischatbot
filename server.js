@@ -8,8 +8,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 let faqEntries = [];
-let idfMap = new Map(); // built once after FAQ loads
-let faqReady = false;
+let idfMap    = new Map(); // built once after FAQ loads — holds BM25 IDF values
+let avgDocLen = 0;         // average weighted doc length (for BM25)
+let faqReady  = false;
+
+// BM25 tuning parameters
+const BM25_K1 = 1.5;  // term-saturation — higher = more influence from repeated terms
+const BM25_B  = 0.75; // length normalisation — 0 = no norm, 1 = full norm
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  FAQ initialisation
@@ -37,9 +42,27 @@ async function initFAQ() {
     console.warn(`[FAQ] Crawl failed (${err.message}), using ${fallbackEntries.length} fallback entries.`);
   }
 
-  // Build IDF index once — must happen after faqEntries is finalised
-  idfMap = buildIDF(faqEntries);
-  console.log(`[IDF] Index built: ${idfMap.size} unique terms across ${faqEntries.length} entries.`);
+  // ── Quality pass ─────────────────────────────────────────────────────────
+  // 1. Remove fragment answers (< 40 chars) — e.g. "Delete the eSIM profile
+  //    first!" or "This is depending on your subscribed plan." are snippets
+  //    from longer sequences and produce misleading one-line replies.
+  const before = faqEntries.length;
+  faqEntries = faqEntries.filter(e => e.answer.trim().length >= 60);
+
+  // 2. Deduplicate: same question text → keep the longest (most complete) answer.
+  //    Happens when multiple FAQ pages repeat the same Q&A.
+  const qMap = new Map();
+  for (const e of faqEntries) {
+    const k = e.question.toLowerCase().trim();
+    if (!qMap.has(k) || e.answer.length > qMap.get(k).answer.length) qMap.set(k, e);
+  }
+  faqEntries = [...qMap.values()];
+
+  console.log(`[FAQ] Quality pass: ${before} → ${faqEntries.length} entries (removed ${before - faqEntries.length} fragments/dupes).`);
+
+  // ── Build BM25 index ──────────────────────────────────────────────────────
+  idfMap = buildIndex(faqEntries);
+  console.log(`[BM25] Index built: ${idfMap.size} unique terms, avgDocLen=${avgDocLen.toFixed(1)}, across ${faqEntries.length} entries.`);
   faqReady = true;
 }
 
@@ -84,7 +107,7 @@ const SYNONYM_GROUPS = [
   ['activate','activation','setup','register','new'],
   ['port','porting','transfer','migrate','pindah','mno'],
   ['store','outlet','shop','centre','center','branch','walk-in'],
-  ['terminate','cancel','stop','close','disconnect'],
+  ['terminate','cancel','stop','close','disconnect','termination','deactivate'],
   ['add-on','addon','booster','extra','additional'],
   ['family','supplementary','share','sharing','multi-line'],
   ['password','reset','forgot','login','log-in','account','sign-in'],
@@ -92,6 +115,14 @@ const SYNONYM_GROUPS = [
   ['volte','hd','voice','calling','quality','drop','dropping'],
   ['installment','easyphone','device','phone','smartphone','purchase'],
   ['coverage','map','area','location','check'],
+  // new groups for improved coverage
+  ['charge','charges','fee','fees','penalty','fine','interest'],
+  ['late','overdue','past','due','missed','unpaid'],
+  ['esim','e-sim','embedded','digital'],
+  ['rebate','discount','waiver','promo','promotion','offer'],
+  ['upgrade','change','switch','move','migrate'],
+  ['number','mobile','phone','msisdn','no'],
+  ['hotspot','tethering','wifi','wireless','sharing'],
 ];
 
 function tokenize(text) {
@@ -101,54 +132,78 @@ function tokenize(text) {
     .filter(w => w.length > 1 && !STOPWORDS.has(w));
 }
 
-// IDF = log((N+1)/(df+1)) + 1  (smoothed so unknown terms don't blow up)
-function buildIDF(entries) {
+// Build BM25 IDF index and compute average document length.
+// BM25 IDF = log((N - df + 0.5) / (df + 0.5) + 1)
+// This is always positive and gives rare terms a strong boost.
+function buildIndex(entries) {
   const N = entries.length;
   const df = new Map();
+  let totalLen = 0;
 
   for (const entry of entries) {
-    // Count each term once per entry — IDF measures *presence*, not frequency
-    const terms = new Set([...tokenize(entry.question), ...tokenize(entry.answer)]);
+    const qTerms = tokenize(entry.question);
+    const aTerms = tokenize(entry.answer);
+    // Weighted doc length mirrors the field-weighting used in scoring (q=3×, a=1×)
+    totalLen += qTerms.length * 3 + aTerms.length;
+    // Each term counted once per entry — IDF reflects *presence*, not frequency
+    const terms = new Set([...qTerms, ...aTerms]);
     for (const t of terms) df.set(t, (df.get(t) || 0) + 1);
   }
 
+  avgDocLen = totalLen / (N || 1);
+
   const result = new Map();
   for (const [term, count] of df) {
-    result.set(term, Math.log((N + 1) / (count + 1)) + 1);
+    result.set(term, Math.log((N - count + 0.5) / (count + 0.5) + 1));
   }
   return result;
 }
 
-// Score one FAQ entry against an expanded query using TF-IDF
-function scoreTFIDF(primaryTokens, expandedTokens, entry) {
-  // Build weighted term-frequency map for this entry
+// Score one FAQ entry against an expanded query using BM25.
+//
+// Why BM25 instead of raw TF-IDF?
+// ─ Raw TF-IDF divides by total doc weight, so a 4-token fragment ("Delete the
+//   eSIM profile first!") gets an artificially high TF for matching tokens.
+// ─ BM25 applies non-linear saturation (k1) and length normalisation (b):
+//     bm25TF = rawFreq * (k1+1) / (rawFreq + k1*(1 - b + b*docLen/avgDocLen))
+//   A short doc's rawFreq hits the saturation ceiling fast, and the length
+//   normalisation penalises documents much shorter or longer than average.
+// ─ Result: comprehensive answers beat fragments even when both contain the
+//   query term, because the fragment's "advantage" is dampened by BM25.
+function scoreBM25(primaryTokens, expandedTokens, entry) {
   const qTerms = tokenize(entry.question);
   const aTerms = tokenize(entry.answer);
-  const totalWeight = qTerms.length * 3 + aTerms.length || 1;
+  const docLen  = qTerms.length * 3 + aTerms.length;
 
-  const tf = new Map();
-  for (const t of qTerms) tf.set(t, (tf.get(t) || 0) + 3); // question field: 3×
-  for (const t of aTerms) tf.set(t, (tf.get(t) || 0) + 1); // answer field:   1×
+  // Raw (non-normalised) weighted term frequencies
+  const rawTF = new Map();
+  for (const t of qTerms) rawTF.set(t, (rawTF.get(t) || 0) + 3); // question: 3×
+  for (const t of aTerms) rawTF.set(t, (rawTF.get(t) || 0) + 1); // answer:   1×
 
-  // Unknown terms get the highest possible IDF (very discriminating)
-  const maxIDF = Math.log((faqEntries.length + 1) / 1) + 1;
+  // Unknown terms use the highest possible IDF
+  const maxIDF = Math.log((faqEntries.length + 0.5) / 0.5 + 1);
+
+  // BM25 TF component — term saturation + length normalisation
+  const bm25TF = (f) =>
+    (f * (BM25_K1 + 1)) /
+    (f + BM25_K1 * (1 - BM25_B + BM25_B * docLen / avgDocLen));
 
   let score = 0;
 
   // Primary query tokens: full weight
   for (const qt of primaryTokens) {
-    const termTF = (tf.get(qt) || 0) / totalWeight;
-    const termIDF = idfMap.get(qt) ?? maxIDF;
-    score += termTF * termIDF;
+    const f = rawTF.get(qt) || 0;
+    if (!f) continue;
+    score += (idfMap.get(qt) ?? maxIDF) * bm25TF(f);
   }
 
-  // Synonym-expanded tokens: reduced weight (0.4×) to boost recall without
+  // Synonym-expanded tokens: reduced weight (0.4×) — improves recall without
   // overriding the primary signal
   for (const qt of expandedTokens) {
-    if (primaryTokens.includes(qt)) continue; // already counted above
-    const termTF = (tf.get(qt) || 0) / totalWeight;
-    const termIDF = idfMap.get(qt) ?? maxIDF;
-    score += termTF * termIDF * 0.4;
+    if (primaryTokens.includes(qt)) continue;
+    const f = rawTF.get(qt) || 0;
+    if (!f) continue;
+    score += (idfMap.get(qt) ?? maxIDF) * bm25TF(f) * 0.4;
   }
 
   return score;
@@ -178,7 +233,7 @@ function searchFAQ(query) {
   const expanded = expandSynonyms(primary);
 
   const scored = faqEntries
-    .map(entry => ({ entry, score: scoreTFIDF(primary, expanded, entry) }))
+    .map(entry => ({ entry, score: scoreBM25(primary, expanded, entry) }))
     .sort((a, b) => b.score - a.score);
 
   const best = scored[0];

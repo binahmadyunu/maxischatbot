@@ -1,6 +1,6 @@
 # Maxis Customer Service Chatbot
 
-A voice-enabled customer service chatbot for Maxis. Supports English (en-MY) and Bahasa Melayu speech recognition, crawls live Maxis FAQ article pages at startup, and answers questions using a local TF-IDF search engine — **no AI API, no billing, no API key required.**
+A voice-enabled customer service chatbot for Maxis. Supports English (en-MY) and Bahasa Melayu speech recognition, crawls all live Maxis FAQ article pages at startup, and answers questions using a local BM25 search engine — **no AI API, no billing, no API key required.**
 
 ---
 
@@ -63,8 +63,8 @@ Every future `git push` to `main` automatically redeploys both Railway (backend)
 /project
 ├── /public
 │   └── index.html      ← Single-page frontend (vanilla HTML/CSS/JS + Web Speech API)
-├── server.js           ← Express backend + TF-IDF search engine
-├── scraper.js          ← BFS crawler (Axios + Cheerio) + 36-entry fallback FAQ
+├── server.js           ← Express backend + BM25 search engine
+├── scraper.js          ← Full-site crawler (Axios + Cheerio) + 22-entry fallback FAQ
 ├── .env                ← Reserved for future use — never committed
 ├── .gitignore
 ├── package.json
@@ -85,27 +85,54 @@ Every future `git push` to `main` automatically redeploys both Railway (backend)
 
 ## How It Works
 
-### 1. Startup — FAQ Crawling
-`scraper.js` runs a BFS (breadth-first) crawler across Maxis FAQ article pages:
+### 1. Startup — Full-Site FAQ Crawling
 
-- The main `/en/faq/` page is a JavaScript-rendered SPA — Axios cannot extract its content.
-- Individual article pages (e.g. `/en/faq/products-services/roaming-and-idd/international-roaming.html`) render Q&A content in plain server-side HTML.
-- The crawler starts from 6 known seed URLs, fetches them in parallel, extracts Q&A pairs using confirmed selectors (`li.cmp-faq-content-space--qna`), then follows any new `/en/faq/` links discovered on each page.
-- Typically crawls ~6 pages in ~4 seconds and extracts **114+ real Q&A pairs** from the live Maxis website.
-- A 36-entry hardcoded fallback FAQ covers topics not found on the crawled pages (billing, account management, SIM, etc.).
-- Final index: **~150 entries**, rebuilt on every server start.
+`scraper.js` auto-discovers and crawls **every** Maxis FAQ article page in two steps:
 
-### 2. TF-IDF Search Engine
-When a user asks a question, `server.js` finds the best matching FAQ entry using TF-IDF (Term Frequency–Inverse Document Frequency):
+**Step 1 — Discover all FAQ URLs**
+Every Maxis FAQ article page embeds the complete site navigation tree in a `data-navigation` HTML attribute as JSON. The scraper fetches one seed page (`/en/faq/products-services/mobile/postpaid`), parses this attribute (HTML entity decoded), and recursively extracts all `/faq/` paths — currently **205 URLs**.
 
-- **Tokenise** — strip punctuation, lowercase, remove stopwords ("how", "do", "I", "the", etc.).
-- **Synonym expansion** — e.g. "internet" also searches for "data", "bandwidth", "quota"; "download" also searches for "view", "statement", "pdf".
-- **TF-IDF scoring** — rare words (e.g. "download", "reload", "roaming") score much higher than common words (e.g. "bill", "Maxis"). This prevents a vague word like "bill" from matching the wrong entry.
-- **Field weighting** — a keyword match in the question text scores 3× more than a match in the answer text.
-- Returns the highest-scoring entry. If no entry scores above zero, the bot directs the user to call **1800-82-1234**.
+**Step 2 — Parallel crawl**
+All 205 URLs are fetched in parallel batches of 10. Individual article pages render Q&A in server-side HTML (no JS execution required), extracted using confirmed CSS selectors:
+- Question: `li.cmp-faq-content-space--qna h2`
+- Answer: `li.cmp-faq-content-space--qna .cmp-faq-content-space--content`
+
+**Quality pass**
+After merging live entries with the fallback:
+1. **Fragment filter** — entries with answers shorter than 60 characters are removed (eliminates one-liner fragments scraped from multi-step instruction lists).
+2. **Deduplication** — if the same question appears on multiple pages, only the longest (most complete) answer is kept.
+
+**Typical startup output:**
+```
+[Scraper] Discovered 205 FAQ URLs from navigation tree.
+[Scraper] Crawled 205 pages — 176 had Q&A — 1862 total pairs.
+[FAQ] 1862 live + 22 fallback-only entries = 1884 total.
+[FAQ] Quality pass: 1884 → 1558 entries (removed 326 fragments/dupes).
+[BM25] Index built: 4445 unique terms, avgDocLen=48.2, across 1558 entries.
+```
+
+A 22-entry hardcoded fallback FAQ acts as a safety net for common queries (billing, plan changes, SIM replacement, etc.) in case the live crawl fails or a topic is missing from the live site.
+
+### 2. BM25 Search Engine
+
+When a user asks a question, `server.js` finds the best matching FAQ entry using **BM25** (Best Match 25), the industry-standard ranking algorithm used by search engines like Elasticsearch and Solr.
+
+**Why BM25 over raw TF-IDF?**
+Plain TF-IDF normalises by total document length, which gives very short answers (fragments like "Delete the eSIM profile first!") an artificially high score for matching one keyword. BM25 fixes this with two mechanisms:
+- **Term saturation (k₁ = 1.5)** — repeated occurrences of a term have diminishing returns. The first hit matters most.
+- **Length normalisation (b = 0.75)** — documents are scored relative to the average document length (≈48 weighted tokens). Short fragments are penalised; long, comprehensive answers are fairly rewarded.
+
+**Pipeline:**
+
+1. **Tokenise** — strip punctuation, lowercase, remove stopwords ("how", "do", "I", "the", etc.).
+2. **Synonym expansion** — 30+ synonym groups map related terms. E.g. "internet" also searches for "data", "bandwidth", "quota"; "late" also searches for "overdue", "unpaid", "missed"; "charge" also searches for "fee", "penalty", "fine". Synonym-matched terms contribute at 0.4× weight to boost recall without overriding exact matches.
+3. **Field weighting** — a keyword match in the question text counts 3× more than in the answer text, since the question is a dense summary of the entry's topic.
+4. **BM25 scoring** — entries are ranked by score; the top entry's answer is returned.
+5. **Zero-match fallback** — if no entry scores above zero, the bot directs the user to call **1800-82-1234**.
 
 ### 3. Voice & Chat UI
-- The browser's **Web Speech API** transcribes speech to text in real time (no external STT service).
+
+- The browser's **Web Speech API** transcribes speech to text in real time (no external STT service, no cost).
 - Transcribed text is POSTed to `/api/chat` and the reply is rendered as a chat bubble.
 - Supports **English (en-MY)** and **Bahasa Melayu (ms-MY)** via a language selector.
 
@@ -117,6 +144,6 @@ When a user asks a question, `server.js` finds the best matching FAQ entry using
 |-------|-----------|
 | Frontend | Vanilla HTML + CSS + JS, Web Speech API |
 | Backend | Node.js + Express |
-| Crawling | Axios + Cheerio — BFS across Maxis FAQ article pages |
-| Search | TF-IDF with synonym expansion (no external API) |
+| Crawling | Axios + Cheerio — full auto-discovery via `data-navigation` sitemap attribute |
+| Search | BM25 with field weighting and synonym expansion (no external API) |
 | Deployment | Railway (backend) + Vercel (frontend) |
