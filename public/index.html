@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maxis Customer Service</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #28a745;
+      --green-dark: #1e7e34;
+      --green-light: #d4edda;
+      --blue: #0d6efd;
+      --blue-light: #dbeafe;
+      --grey-bubble: #f0f0f0;
+      --text: #212529;
+      --muted: #6c757d;
+      --border: #dee2e6;
+      --white: #ffffff;
+      --shadow: 0 4px 20px rgba(0,0,0,0.08);
+      --radius: 16px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f6fa;
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+      color: var(--text);
+    }
+
+    /* ─── LEFT PANEL ─── */
+    .left-panel {
+      width: 35%;
+      min-width: 280px;
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 32px;
+      gap: 32px;
+      box-shadow: 4px 0 16px rgba(0,0,0,0.04);
+    }
+
+    /* Branding */
+    .brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 80px;
+      height: 80px;
+      background: var(--green);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(40,167,69,0.35);
+    }
+
+    .brand-logo svg { width: 44px; height: 44px; fill: white; }
+
+    .brand-name {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--green);
+      letter-spacing: -0.5px;
+    }
+
+    .brand-tagline {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* Control card */
+    .control-card {
+      background: #f8f9fa;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 36px 28px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      box-shadow: var(--shadow);
+    }
+
+    /* Mic button */
+    .mic-btn {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      background: var(--green);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 6px 24px rgba(40,167,69,0.4);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mic-btn:hover:not(:disabled) {
+      background: var(--green-dark);
+      transform: scale(1.04);
+      box-shadow: 0 8px 28px rgba(40,167,69,0.5);
+    }
+
+    .mic-btn:active:not(:disabled) { transform: scale(0.97); }
+
+    .mic-btn:disabled {
+      background: #adb5bd;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .mic-btn.listening {
+      background: #dc3545;
+      box-shadow: 0 6px 24px rgba(220,53,69,0.45);
+      animation: pulse-ring 1.5s ease-in-out infinite;
+    }
+
+    .mic-btn.listening:hover { background: #bb2d3b; }
+
+    .mic-btn svg { width: 36px; height: 36px; fill: white; flex-shrink: 0; }
+
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(220,53,69,0.5); }
+      70%  { box-shadow: 0 0 0 18px rgba(220,53,69,0); }
+      100% { box-shadow: 0 0 0 0 rgba(220,53,69,0); }
+    }
+
+    /* Status */
+    .status-section {
+      width: 100%;
+    }
+
+    .status-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-idle     { background: #fff8e1; color: #856404; }
+    .status-idle .status-dot     { background: #ffc107; }
+
+    .status-listening { background: #fde8e8; color: #842029; }
+    .status-listening .status-dot { background: #dc3545; animation: blink 1s step-start infinite; }
+
+    .status-processing { background: #e8f0fe; color: #1a56db; }
+    .status-processing .status-dot { background: #0d6efd; animation: blink 0.7s step-start infinite; }
+
+    .status-done { background: var(--green-light); color: #155724; }
+    .status-done .status-dot { background: var(--green); }
+
+    .status-error { background: #fde8e8; color: #842029; }
+    .status-error .status-dot { background: #dc3545; }
+
+    @keyframes blink { 50% { opacity: 0.2; } }
+
+    /* Live transcript */
+    .live-transcript {
+      width: 100%;
+      min-height: 48px;
+      padding: 10px 14px;
+      background: var(--white);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      font-style: italic;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .live-transcript.active { display: block; }
+
+    /* Error notice */
+    .api-notice {
+      width: 100%;
+      padding: 10px 14px;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 10px;
+      font-size: 12px;
+      color: #664d03;
+      text-align: center;
+      display: none;
+    }
+
+    .api-notice.visible { display: block; }
+
+    /* Language selector */
+    .lang-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .lang-row label { font-weight: 500; white-space: nowrap; }
+
+    .lang-select {
+      flex: 1;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      background: var(--white);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    /* ─── RIGHT PANEL ─── */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #f5f6fa;
+      min-width: 0;
+    }
+
+    .chat-header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .chat-header-avatar {
+      width: 40px;
+      height: 40px;
+      background: var(--green);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chat-header-avatar svg { width: 22px; height: 22px; fill: white; }
+
+    .chat-header-info h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .chat-header-info p {
+      font-size: 12px;
+      color: var(--green);
+      font-weight: 500;
+    }
+
+    .ready-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #adb5bd;
+      margin-left: auto;
+      transition: background 0.3s;
+    }
+
+    .ready-dot.ready { background: var(--green); }
+
+    /* Chat messages area */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 28px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    .chat-messages::-webkit-scrollbar { width: 5px; }
+    .chat-messages::-webkit-scrollbar-track { background: transparent; }
+    .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--muted);
+      padding: 40px;
+      text-align: center;
+    }
+
+    .empty-state svg { width: 56px; height: 56px; opacity: 0.25; }
+    .empty-state p { font-size: 15px; line-height: 1.6; }
+    .empty-state span { font-size: 13px; }
+
+    /* Message rows */
+    .message-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 72%;
+      animation: fadeUp 0.25s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-row.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .message-row.bot {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .message-sender {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 4px;
+      letter-spacing: 0.3px;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 100%;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .bubble.user {
+      background: var(--blue);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble.bot {
+      background: var(--white);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    }
+
+    .bubble.error {
+      background: #fde8e8;
+      color: #842029;
+      border: 1px solid #f5c6cb;
+    }
+
+    .message-time {
+      font-size: 10px;
+      color: #adb5bd;
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+
+    /* Typing indicator */
+    .typing-bubble {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 14px 18px;
+    }
+
+    .typing-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #adb5bd;
+      animation: typing-bounce 1.2s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(1) { animation-delay: 0s; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing-bounce {
+      0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+      40%            { transform: scale(1.1); opacity: 1; }
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 700px) {
+      body { flex-direction: column; }
+      .left-panel { width: 100%; min-width: unset; border-right: none; border-bottom: 1px solid var(--border); padding: 24px 20px; gap: 20px; }
+      .right-panel { flex: 1; }
+      .control-card { padding: 24px 16px; gap: 20px; }
+      .mic-btn { width: 90px; height: 90px; }
+      .mic-btn svg { width: 28px; height: 28px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════ LEFT PANEL ════════════ -->
+<div class="left-panel">
+
+  <div class="brand">
+    <div class="brand-logo">
+      <!-- Maxis "M" / signal icon -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1 9l4 4 7-7 7 7 4-4" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M5 21V13M19 21V13M12 21V6" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="brand-name">Maxis</div>
+    <div class="brand-tagline">Customer Service Assistant<br>Powered by Claude AI</div>
+  </div>
+
+  <div class="control-card">
+
+    <!-- Language selector -->
+    <div class="lang-row">
+      <label for="langSelect">Language:</label>
+      <select id="langSelect" class="lang-select">
+        <option value="en-MY">English (MY)</option>
+        <option value="ms-MY">Bahasa Melayu</option>
+      </select>
+    </div>
+
+    <!-- Mic button -->
+    <button class="mic-btn" id="micBtn" title="Click to start talking">
+      <svg id="micIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+        <line x1="12" y1="19" x2="12" y2="23" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        <line x1="8" y1="23" x2="16" y2="23" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <span id="micLabel">Start Talking</span>
+    </button>
+
+    <!-- Live transcript -->
+    <div class="live-transcript" id="liveTranscript">Listening…</div>
+
+    <!-- Status -->
+    <div class="status-section">
+      <div class="status-label">Status</div>
+      <div class="status-badge status-idle" id="statusBadge">
+        <div class="status-dot"></div>
+        <span id="statusText">Idle</span>
+      </div>
+    </div>
+
+    <!-- API / feature notice -->
+    <div class="api-notice" id="apiNotice"></div>
+
+  </div>
+</div>
+
+<!-- ════════════ RIGHT PANEL ════════════ -->
+<div class="right-panel">
+
+  <div class="chat-header">
+    <div class="chat-header-avatar">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/>
+      </svg>
+    </div>
+    <div class="chat-header-info">
+      <h2>Maxis Bot</h2>
+      <p id="faqStatus">Initialising…</p>
+    </div>
+    <div class="ready-dot" id="readyDot" title="FAQ status"></div>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <div class="empty-state" id="emptyState">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" stroke="currentColor" stroke-width="2" fill="none"/>
+        <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+        <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <p>Click <strong>"Start Talking"</strong> to begin.<br>Ask me anything about Maxis services.</p>
+      <span>Supports English &amp; Bahasa Melayu</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ──────────────────────────────────────────────
+  //  Config
+  // ──────────────────────────────────────────────
+  const API_BASE = '/api';
+
+  // ──────────────────────────────────────────────
+  //  State
+  // ──────────────────────────────────────────────
+  let recognition = null;
+  let isListening = false;
+  let conversationHistory = [];
+  let faqReady = false;
+  let typingRow = null;
+
+  // ──────────────────────────────────────────────
+  //  DOM refs
+  // ──────────────────────────────────────────────
+  const micBtn        = document.getElementById('micBtn');
+  const micLabel      = document.getElementById('micLabel');
+  const micIcon       = document.getElementById('micIcon');
+  const statusBadge   = document.getElementById('statusBadge');
+  const statusText    = document.getElementById('statusText');
+  const liveTranscript= document.getElementById('liveTranscript');
+  const chatMessages  = document.getElementById('chatMessages');
+  const emptyState    = document.getElementById('emptyState');
+  const apiNotice     = document.getElementById('apiNotice');
+  const faqStatus     = document.getElementById('faqStatus');
+  const readyDot      = document.getElementById('readyDot');
+  const langSelect    = document.getElementById('langSelect');
+
+  // ──────────────────────────────────────────────
+  //  Status helpers
+  // ──────────────────────────────────────────────
+  function setStatus(state, text) {
+    const classes = ['status-idle','status-listening','status-processing','status-done','status-error'];
+    statusBadge.classList.remove(...classes);
+    statusBadge.classList.add('status-' + state);
+    statusText.textContent = text;
+  }
+
+  // ──────────────────────────────────────────────
+  //  Chat UI helpers
+  // ──────────────────────────────────────────────
+  function hideEmptyState() {
+    if (emptyState) emptyState.style.display = 'none';
+  }
+
+  function now() {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function appendMessage(role, text, isError = false) {
+    hideEmptyState();
+    removeTyping();
+
+    const row = document.createElement('div');
+    row.className = 'message-row ' + role;
+
+    if (role === 'bot') {
+      const sender = document.createElement('div');
+      sender.className = 'message-sender';
+      sender.textContent = 'Maxis Bot';
+      row.appendChild(sender);
+    }
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble ' + role + (isError ? ' error' : '');
+    bubble.textContent = text;
+    row.appendChild(bubble);
+
+    const time = document.createElement('div');
+    time.className = 'message-time';
+    time.textContent = now();
+    row.appendChild(time);
+
+    chatMessages.appendChild(row);
+    scrollToBottom();
+    return row;
+  }
+
+  function showTyping() {
+    hideEmptyState();
+    removeTyping();
+
+    typingRow = document.createElement('div');
+    typingRow.className = 'message-row bot';
+
+    const sender = document.createElement('div');
+    sender.className = 'message-sender';
+    sender.textContent = 'Maxis Bot';
+    typingRow.appendChild(sender);
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble bot typing-bubble';
+    bubble.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+    typingRow.appendChild(bubble);
+
+    chatMessages.appendChild(typingRow);
+    scrollToBottom();
+  }
+
+  function removeTyping() {
+    if (typingRow) { typingRow.remove(); typingRow = null; }
+  }
+
+  function scrollToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function showNotice(msg, type = 'warn') {
+    apiNotice.textContent = msg;
+    apiNotice.classList.add('visible');
+    if (type === 'error') apiNotice.style.background = '#fde8e8';
+  }
+
+  // ──────────────────────────────────────────────
+  //  FAQ status polling
+  // ──────────────────────────────────────────────
+  async function pollFAQStatus() {
+    try {
+      const res = await fetch(API_BASE + '/status');
+      const data = await res.json();
+      if (data.ready) {
+        faqReady = true;
+        faqStatus.textContent = 'Online · FAQ loaded';
+        readyDot.classList.add('ready');
+        micBtn.disabled = false;
+      } else {
+        faqStatus.textContent = 'Loading FAQ…';
+        setTimeout(pollFAQStatus, 2000);
+      }
+    } catch {
+      faqStatus.textContent = 'Server offline';
+      showNotice('Cannot reach the server. Make sure the backend is running.', 'error');
+      micBtn.disabled = false; // allow attempt anyway
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Speech Recognition setup
+  // ──────────────────────────────────────────────
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    showNotice('Your browser does not support the Web Speech API. Please use Chrome or Edge.', 'error');
+    micBtn.disabled = true;
+    micLabel.textContent = 'Not Supported';
+  } else {
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      isListening = true;
+      setStatus('listening', 'Listening...');
+      micBtn.classList.add('listening');
+      micLabel.textContent = 'Stop';
+      liveTranscript.textContent = 'Listening…';
+      liveTranscript.classList.add('active');
+    };
+
+    recognition.onresult = (e) => {
+      let interim = '';
+      let final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t;
+        else interim += t;
+      }
+      liveTranscript.textContent = final || interim || 'Listening…';
+    };
+
+    recognition.onerror = (e) => {
+      stopListening();
+      if (e.error === 'not-allowed') {
+        showNotice('Microphone access denied. Please allow microphone permission and reload.', 'error');
+        setStatus('error', 'Permission denied');
+      } else if (e.error === 'no-speech') {
+        setStatus('idle', 'Idle');
+      } else {
+        setStatus('error', 'Error: ' + e.error);
+      }
+    };
+
+    recognition.onend = () => {
+      const transcript = liveTranscript.textContent.trim();
+      stopListening();
+
+      if (transcript && transcript !== 'Listening…' && transcript.length > 1) {
+        liveTranscript.classList.remove('active');
+        handleUserMessage(transcript);
+      } else {
+        setStatus('idle', 'Idle');
+        liveTranscript.classList.remove('active');
+      }
+    };
+  }
+
+  function startListening() {
+    if (!recognition) return;
+    recognition.lang = langSelect.value;
+    try {
+      recognition.start();
+    } catch(e) {
+      // already started
+    }
+  }
+
+  function stopListening() {
+    isListening = false;
+    micBtn.classList.remove('listening');
+    micLabel.textContent = 'Start Talking';
+    if (recognition) {
+      try { recognition.stop(); } catch(e) {}
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Mic button toggle
+  // ──────────────────────────────────────────────
+  micBtn.addEventListener('click', () => {
+    if (isListening) {
+      stopListening();
+      setStatus('idle', 'Idle');
+      liveTranscript.classList.remove('active');
+    } else {
+      startListening();
+    }
+  });
+
+  // ──────────────────────────────────────────────
+  //  API call
+  // ──────────────────────────────────────────────
+  async function handleUserMessage(text) {
+    appendMessage('user', text);
+    setStatus('processing', 'Processing...');
+    showTyping();
+
+    // Add to history before sending
+    conversationHistory.push({ role: 'user', content: text });
+
+    try {
+      const res = await fetch(API_BASE + '/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userMessage: text,
+          // Send prior history (all but the last user message we just added)
+          messages: conversationHistory.slice(0, -1)
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Server error');
+      }
+
+      appendMessage('bot', data.reply);
+      conversationHistory.push({ role: 'assistant', content: data.reply });
+      setStatus('done', 'Done');
+    } catch (err) {
+      removeTyping();
+      appendMessage('bot', 'Sorry, I encountered an error: ' + err.message, true);
+      // Roll back last user message from history on error
+      conversationHistory.pop();
+      setStatus('error', 'Error');
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  Init
+  // ──────────────────────────────────────────────
+  micBtn.disabled = true;
+  setStatus('idle', 'Idle');
+  pollFAQStatus();
+</script>
+</body>
+</html>
