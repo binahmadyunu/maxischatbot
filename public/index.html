@@ -431,6 +431,53 @@
       40%            { transform: scale(1.1); opacity: 1; }
     }
 
+    /* ─── AI COACH SUGGESTION CHIPS ─── */
+    .suggestions-wrapper {
+      align-self: flex-start;
+      max-width: 72%;
+      margin-top: -4px;    /* pull up slightly under the bot bubble */
+      animation: fadeUp 0.3s ease 0.1s both;
+    }
+
+    .suggestions-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.4px;
+      margin-bottom: 7px;
+      padding-left: 2px;
+    }
+
+    .suggestions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .suggestion-chip {
+      padding: 6px 14px;
+      border-radius: 50px;
+      border: 1.5px solid var(--green);
+      background: transparent;
+      color: var(--green);
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, transform 0.1s;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+
+    .suggestion-chip:hover {
+      background: var(--green);
+      color: var(--white);
+      transform: translateY(-1px);
+    }
+
+    .suggestion-chip:active {
+      transform: translateY(0);
+    }
+
     /* ─── RESPONSIVE ─── */
     @media (max-width: 700px) {
       body { flex-direction: column; }
@@ -573,6 +620,62 @@
 
   function now() {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Track the current suggestions wrapper so we can remove it on next send
+  let currentSuggestionsEl = null;
+
+  function clearSuggestions() {
+    if (currentSuggestionsEl) {
+      currentSuggestionsEl.remove();
+      currentSuggestionsEl = null;
+    }
+  }
+
+  function appendSuggestions(suggestions) {
+    clearSuggestions();
+    if (!suggestions || suggestions.length === 0) return;
+
+    // Build a set of everything the user has already asked (case-insensitive)
+    const alreadyAsked = new Set(
+      conversationHistory
+        .filter(m => m.role === 'user')
+        .map(m => m.content.toLowerCase().trim())
+    );
+
+    // Remove any suggestion that matches a prior user message
+    const filtered = suggestions.filter(
+      s => !alreadyAsked.has(s.toLowerCase().trim())
+    );
+
+    if (filtered.length === 0) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'suggestions-wrapper';
+
+    const label = document.createElement('div');
+    label.className = 'suggestions-label';
+    label.textContent = '💡 You might also ask:';
+    wrapper.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'suggestions-row';
+
+    filtered.forEach(text => {
+      const chip = document.createElement('button');
+      chip.className = 'suggestion-chip';
+      chip.textContent = text;
+      chip.addEventListener('click', () => {
+        clearSuggestions();
+        handleUserMessage(text);
+      });
+      row.appendChild(chip);
+    });
+
+    wrapper.appendChild(row);
+    chatMessages.appendChild(wrapper);
+    currentSuggestionsEl = wrapper;
+    scrollToBottom();
   }
 
   function appendMessage(role, text, isError = false) {
@@ -758,6 +861,7 @@
   //  API call
   // ──────────────────────────────────────────────
   async function handleUserMessage(text) {
+    clearSuggestions();             // remove previous chips before showing new message
     appendMessage('user', text);
     setStatus('processing', 'Processing...');
     showTyping();
@@ -785,6 +889,9 @@
       appendMessage('bot', data.reply);
       conversationHistory.push({ role: 'assistant', content: data.reply });
       setStatus('done', 'Done');
+
+      // Render AI Coach suggestion chips below the bot reply
+      appendSuggestions(data.suggestions);
     } catch (err) {
       removeTyping();
       appendMessage('bot', 'Sorry, I encountered an error: ' + err.message, true);

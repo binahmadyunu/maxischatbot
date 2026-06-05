@@ -1,6 +1,6 @@
 # Maxis Customer Service Chatbot
 
-A voice-enabled customer service chatbot for Maxis. Supports English (en-MY) and Bahasa Melayu speech recognition, crawls all live Maxis FAQ article pages at startup, and answers questions using a local BM25 search engine — **no AI API, no billing, no API key required.**
+A voice-enabled customer service chatbot for Maxis. Supports English (en-MY) and Bahasa Melayu speech recognition, crawls all live Maxis FAQ article pages at startup, answers questions using a local BM25 search engine, and surfaces contextual follow-up suggestions via an **AI Coach** feature — **no AI API, no billing, no API key required.**
 
 ---
 
@@ -79,7 +79,7 @@ Every future `git push` to `main` automatically redeploys both Railway (backend)
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET`  | `/api/status` | Returns `{ ready: bool, entries: number }` — crawler status |
-| `POST` | `/api/chat`   | Body: `{ userMessage: string }` → Returns `{ reply: string }` |
+| `POST` | `/api/chat`   | Body: `{ userMessage: string }` → Returns `{ reply: string, suggestions: string[] }` |
 
 ---
 
@@ -130,7 +130,36 @@ Plain TF-IDF normalises by total document length, which gives very short answers
 4. **BM25 scoring** — entries are ranked by score; the top entry's answer is returned.
 5. **Zero-match fallback** — if no entry scores above zero, the bot directs the user to call **1800-82-1234**.
 
-### 3. Voice & Chat UI
+### 3. AI Coach — Contextual Suggestion Chips
+
+After every bot reply, the UI renders 2–3 clickable suggestion chips below the message bubble, labelled **"💡 You might also ask:"**. Clicking a chip sends that question immediately — no typing or speaking required.
+
+**How suggestions are generated (server-side, no external API):**
+
+1. `detectTopic(entry)` keyword-matches the winning FAQ entry against 9 topic buckets using regex:
+
+   | Topic | Triggered by keywords |
+   |-------|-----------------------|
+   | `billing` | late payment, JomPay, pay bill, e-bill, download bill |
+   | `data` | data, internet, bandwidth, quota, slow, buffering |
+   | `roaming` | roam, international roaming, abroad, overseas, IDD |
+   | `plan` | plan, package, upgrade, terminate, family line |
+   | `sim` | eSIM, SIM card, chip, replace SIM |
+   | `account` | password, login, MyMaxis, profile, personal detail, port |
+   | `network` | network, signal, coverage, 4G, 5G, LTE, outage |
+   | `prepaid` | Hotlink, prepaid, reload, top-up |
+   | `support` | *(fallback for everything else)* |
+
+2. `getSuggestions(entry)` shuffles the topic's question pool, excludes anything too similar to what was just answered, and returns 3 suggestions.
+
+3. Both `reply` and `suggestions` are returned together in the `/api/chat` response — no extra round-trip needed.
+
+**Frontend behaviour:**
+- Chips appear with a fade-in animation 100 ms after the bot bubble lands.
+- Sending any new message (by voice or by clicking a chip) clears the previous chips before showing the next ones.
+- If the bot returns no match, the chips default to the three most common support questions.
+
+### 4. Voice & Chat UI
 
 - The browser's **Web Speech API** transcribes speech to text in real time (no external STT service, no cost).
 - Transcribed text is POSTed to `/api/chat` and the reply is rendered as a chat bubble.

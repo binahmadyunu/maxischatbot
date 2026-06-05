@@ -223,11 +223,113 @@ function expandSynonyms(tokens) {
   return [...expanded];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  AI Coach — topic-based follow-up suggestions
+//
+//  After every answer the bot returns 2–3 suggested follow-up questions so the
+//  user knows what they can explore next without having to think of phrasing.
+//  Topics are detected by keyword matching against the matched entry's text.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TOPIC_SUGGESTIONS = {
+  billing: [
+    'How do I pay my Maxis bill?',
+    'How do I download my bill?',
+    'What are the late payment charges?',
+    'How do I set up auto-debit?',
+    'How do I check my outstanding balance?',
+    'What is JomPay and how do I use it?',
+  ],
+  data: [
+    'How do I check my data usage?',
+    'What happens when I run out of data?',
+    'How do I add a data booster?',
+    'Why is my internet slow?',
+    'How do I share my data with family?',
+  ],
+  roaming: [
+    'How do I activate international roaming?',
+    'How do I deactivate roaming?',
+    'What are the roaming charges?',
+    'Which countries can I roam in?',
+    'How do I buy a roaming pass?',
+  ],
+  plan: [
+    'How do I change my plan?',
+    'What postpaid plans does Maxis offer?',
+    'How do I add a family line?',
+    'How do I terminate my plan?',
+    'What is included in my postpaid plan?',
+  ],
+  sim: [
+    'What is eSIM?',
+    'How do I replace my SIM card?',
+    'How do I port my number to Maxis?',
+    'How do I activate a new SIM card?',
+  ],
+  account: [
+    'How do I reset my MyMaxis password?',
+    'How do I update my personal details?',
+    'How do I port my number to Maxis?',
+    'How do I register for MyMaxis?',
+  ],
+  network: [
+    'Why is my internet slow?',
+    'What is 5G and how do I get it?',
+    'How do I check for network outages?',
+    'How do I report a network issue?',
+  ],
+  prepaid: [
+    'How do I reload my Hotlink credit?',
+    'How do I check my Hotlink balance?',
+    'What are the Hotlink data passes?',
+    'How do I convert Hotlink to postpaid?',
+  ],
+  support: [
+    'How do I contact Maxis customer service?',
+    'Where are Maxis stores located?',
+    'What are Maxis store operating hours?',
+    'How do I check my bill?',
+  ],
+};
+
+function detectTopic(entry) {
+  const text = (entry.question + ' ' + entry.answer).toLowerCase();
+  if (/roam|international roaming|abroad|overseas|idd/.test(text)) return 'roaming';
+  if (/hotlink|prepaid|reload|topup|top-up/.test(text)) return 'prepaid';
+  if (/late.?payment|jompay|pay.*bill|bill.*pay|e-bill|ebill|download.*bill|bill statement/.test(text)) return 'billing';
+  if (/data|internet|bandwidth|quota|slow|buffering|connection speed/.test(text)) return 'data';
+  if (/\besim\b|e-sim|sim card|chip|replace.*sim/.test(text)) return 'sim';
+  if (/\bplan\b|package|upgrade|terminate|family line|subscription/.test(text)) return 'plan';
+  if (/password|login|my.?maxis|profile|personal detail|port|pindah/.test(text)) return 'account';
+  if (/network|signal|coverage|4g|5g|lte|outage/.test(text)) return 'network';
+  return 'support';
+}
+
+function getSuggestions(entry, count = 3) {
+  const topic = detectTopic(entry);
+  const pool = TOPIC_SUGGESTIONS[topic] || TOPIC_SUGGESTIONS.support;
+
+  // Exclude suggestions too similar to what was just answered
+  const answered = entry.question.toLowerCase().slice(0, 40);
+  const available = pool.filter(s => !s.toLowerCase().startsWith(answered.slice(0, 20)));
+
+  // Shuffle and take `count`
+  return available
+    .map(s => ({ s, r: Math.random() }))
+    .sort((a, b) => a.r - b.r)
+    .slice(0, count)
+    .map(x => x.s);
+}
+
 function searchFAQ(query) {
   const primary = tokenize(query);
 
   if (primary.length === 0) {
-    return 'Could you please rephrase your question? You can also reach Maxis support at 1800-82-1234.';
+    return {
+      reply: 'Could you please rephrase your question? You can also reach Maxis support at 1800-82-1234.',
+      suggestions: TOPIC_SUGGESTIONS.support.slice(0, 3),
+    };
   }
 
   const expanded = expandSynonyms(primary);
@@ -240,15 +342,20 @@ function searchFAQ(query) {
 
   // Entries with zero overlap with the query score exactly 0
   if (!best || best.score === 0) {
-    return (
-      "I'm sorry, I don't have specific information about that. For further assistance:\n" +
-      "• Call Maxis support: 1800-82-1234 (available 24/7)\n" +
-      "• Visit: maxis.com.my\n" +
-      "• Chat via the Maxis app"
-    );
+    return {
+      reply:
+        "I'm sorry, I don't have specific information about that. For further assistance:\n" +
+        '• Call Maxis support: 1800-82-1234 (available 24/7)\n' +
+        '• Visit: maxis.com.my\n' +
+        '• Chat via the Maxis app',
+      suggestions: TOPIC_SUGGESTIONS.support.slice(0, 3),
+    };
   }
 
-  return best.entry.answer;
+  return {
+    reply: best.entry.answer,
+    suggestions: getSuggestions(best.entry),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,8 +379,8 @@ app.post('/api/chat', (req, res) => {
     return res.status(503).json({ error: 'FAQ data is still loading. Please try again shortly.' });
   }
 
-  const reply = searchFAQ(userMessage);
-  res.json({ reply });
+  const { reply, suggestions } = searchFAQ(userMessage);
+  res.json({ reply, suggestions });
 });
 
 app.get('*', (req, res) => {
