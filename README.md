@@ -156,8 +156,10 @@ After every bot reply, the UI renders 2–3 clickable suggestion chips below the
 
 **Frontend behaviour:**
 - Chips appear with a fade-in animation 100 ms after the bot bubble lands.
+- Before rendering, chips are filtered against the full conversation history — any suggestion that the user has already asked (exact case-insensitive match) is automatically excluded, so the same question never reappears as a prompt.
 - Sending any new message (by voice or by clicking a chip) clears the previous chips before showing the next ones.
 - If the bot returns no match, the chips default to the three most common support questions.
+- If all returned suggestions have already been asked, the chip row is omitted entirely.
 
 ### 4. Voice & Chat UI
 
